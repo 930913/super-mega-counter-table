@@ -1,0 +1,130 @@
+<!Doctype html>
+<html>
+<head>
+<link rel="stylesheet" href="https://rawgit.com/markmalek/Fixed-Header-Table/master/css/defaultTheme.css" />
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script type="text/javascript" src="https://rawgit.com/markmalek/Fixed-Header-Table/master/jquery.fixedheadertable.min.js"></script>
+<script type="text/javascript" src="http://www.bitstorm.org/jquery/color-animation/jquery.animate-colors-min.js"></script>
+<script>
+var winmap={};
+var maxgame=0;
+var summap={};
+var sumdata={};
+var champids=[];
+$.when(
+	$.get("winmap.json",function(data){
+		winmap=data;
+	},"json"),
+	$.get("http://ddragon.leagueoflegends.com/cdn/5.7.1/data/en_US/champion.json",function(data){
+		for(champ in data["data"]){
+			summap[data["data"][champ]["key"]]=data["data"][champ]["id"];
+			champids.push(data["data"][champ]["key"]);
+		}
+		sumdata=data;
+	},"json")
+).then(function(){
+	maxgame=Math.max.apply(null,Object.keys(winmap).map(function(key){return winmap[key];}));
+	renderTable();
+	$(window).on("resize",function(){renderTable();})
+}
+);
+function renderTable(){
+	var tbl="<table id='table'><thead><tr><td>&nbsp;</td>";
+	for(i in champids){id=champids[i];tbl+="<td data-id2='"+id+"'>"+champ_sprite(id,sumdata,summap)+"</td>";}
+	tbl+="</td></tr></thead><tbody>\n";
+	for(i in champids){
+		id=champids[i];
+		tbl+="<tr><td data-id='"+id+"'>"+champ_sprite(id,sumdata,summap)+"</td>"
+		for(j in champids){
+			id2=champids[j];
+			var win=winmap[id+"-"+id2]||0;
+			var lost=winmap[id2+"-"+id]||0;
+			var games=win+lost;
+			var winrate=(games>0)?(win/games*100):0;
+			var confidence=games/maxgame;
+			confidence=Math.log(0.02+Math.min(confidence,1)*2,10)/(2*Math.LN10)+0.84;
+			var wrmod=normalcdf(50,10,winrate);
+			if(id==id2){
+				tbl+="<td data-id='"+id+"' data-id2='"+id2+"' style='background-color:rgba(255,0,0,"+confidence+");'>"+""+"</td>";
+			}else{
+				tbl+="<td data-id='"+id+"' data-id2='"+id2+"' style='background-color:rgba(0,"+(Math.round(wrmod*255))+","+(255-Math.round(wrmod*255))+","+(confidence)+");'>"+""+"</td>";
+			}
+		}
+		tbl+="</tr>\n";
+	}
+	tbl+="</tbody></table>";
+	$("#container").css({"width":window.innerWidth-8+"px","height":window.innerHeight-8+"px"});
+	$("#container").html(tbl);
+	$('#table').fixedHeaderTable({fixedColumns:1});
+	flash11();
+	setTriggers();
+}
+function setTriggers(){
+	$("tbody tr td:first-child").css("cursor","pointer").on("click",function(){
+		$('#table').fixedHeaderTable("destroy");
+		var id=this.getAttribute("data-id");
+		champids.sort(function(a,b){return getRelativeChampScore(id,a)-getRelativeChampScore(id,b)});
+		var show=champids.slice(0,5).concat(champids.slice(-5));
+		$("tr td:not(:first-child)").hide();
+		$("tbody tr").hide();
+		$("tr:has([data-id="+id+"])").show();
+		for(i in show){
+			id=show[i];
+			$("[data-id2="+id+"]").show();
+		}
+		setTriggers();
+	});
+	$("tbody tr td:not(:first-child)").on("mousemove",function(m){
+		showInfo(this,m.pageX+16,m.pageY+8);
+	});
+	$("body").on("click",function(e){
+		if($(e.target).is("body,table,thead td,#container")){
+			$("tr, td").show();
+			$('#table').fixedHeaderTable({fixedColumns:1});
+			setTriggers();
+		}
+	});
+	$("table thead td:first-child:first").on("mouseover",showLegend);
+}
+function getRelativeChampScore(id,id2){
+	if(id==id2)return 0;
+	var win=winmap[id+"-"+id2]||0;
+	var lost=winmap[id2+"-"+id]||0;
+	return win-lost;
+}
+function champ_sprite(id,data,summap){
+	var img=data["data"][summap[id]]["image"]
+	return "<div title='"+summap[id]+"' style=\"width:"+img['w']+"px;height:"+img['h']+"px;background:url(https://ddragon.leagueoflegends.com/cdn/5.7.1/img/sprite/"+img['sprite']+") -"+img['x']+"px -"+img['y']+"px;\">&nbsp;</div>"
+}
+function showInfo(e,x,y){
+	var id=e.getAttribute("data-id");
+	var id2=e.getAttribute("data-id2");
+	var win=winmap[id+"-"+id2]||0;
+	var champ1=summap[id];
+	var champ2=summap[id2];
+	if(id==id2){return $("#info").html(champ1+" was played "+win+" times against themself").css({"left":x+"px","top":y+"px"});}
+	var lost=winmap[id2+"-"+id]||0;
+	var games=win+lost;
+	var winrate=(games>0)?(win/games*100):0;
+	$("#info").html(champ1+" vs. "+champ2+"<br />"+win+"W/"+lost+"L<br />Win%: "+Math.round(winrate)).css({"left":x+"px","top":y+"px"});
+}
+function flash11(){
+	$("table thead td:first-child:first").animate({"background-color":"#f00"},1500).animate({"background-color":"#fff"},1500,flash11);
+}
+function showLegend(){
+	$("#info").html("This visualisation shows how champions counter one another in URF.<br />Blue means column beats row, and green means row beats column.<br />The deeper the colour, the higher the confidence level.<br />The diagonal shows how many games the champion was played against themself.<br /><br />You can click a champion icon on the left to see the best counters for and against.").css("left","100px").css("top","100px");
+	$("table thead td:first-child:first").animate({"background-color":"#fff"},700,function(){$("table thead td:first-child:first").stop(true)});
+}
+function normalcdf(mean, sigma, to){
+	var z = (to-mean)/Math.sqrt(2*sigma*sigma);
+	var t = 1/(1+0.3275911*Math.abs(z));
+	var erf = 1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-z*z);
+	return (1/2)*(1+((z<0)?-1:1)*erf);
+}
+</script>
+</head>
+<body style="overflow:hidden;">
+<div id="info" style="position:fixed;background-color:white;border:1px solid black;padding:2px;z-index:1;">Loading...</div>
+<div id="container"></div>
+</body>
+</html>
