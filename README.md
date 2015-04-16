@@ -2,6 +2,10 @@
 
 This is an entry for Riot's League of Legends API challenge that generates a visualisation of how each champion counters one another.
 
+## Demo
+
+A working demo generated from over 42k URF matches is at http://930913.github.io/super-mega-counter-table/supermegacountertable.html
+
 ## Workings
 
 config.py contained the configuration for the directory and api key
